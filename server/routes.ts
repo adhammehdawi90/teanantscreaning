@@ -15,6 +15,7 @@ import path from "path";
 import fs from "fs";
 import storage from "./storage";
 import { analyzeInterviewVideo } from "./lib/gemini";
+import { registerVideoAssessmentRoutes } from "./routes/video-assessment";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -458,6 +459,9 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
+  // Register video assessment routes
+  registerVideoAssessmentRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

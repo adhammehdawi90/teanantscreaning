@@ -20,33 +20,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { insertAssessmentSchema, type InsertAssessment } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { extendedAssessmentSchema, type ExtendedAssessment } from "@/lib/assessment-helpers";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, Video, FileText, CheckCircle } from "lucide-react";
 import { useState } from "react";
 import * as z from "zod";
 
-type FormData = InsertAssessment & {
-  skills: string[];
-  difficulty: "beginner" | "intermediate" | "advanced";
-};
-
-const formSchema = insertAssessmentSchema.extend({
-  skills: z.array(z.string()).min(1, "At least one skill is required"),
-  difficulty: z.enum(["beginner", "intermediate", "advanced"])
-});
+type FormData = z.infer<typeof extendedAssessmentSchema>;
 
 export default function CreateAssessment() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [includeVideoQuestions, setIncludeVideoQuestions] = useState(true);
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(extendedAssessmentSchema),
     defaultValues: {
       title: "",
       description: "",
@@ -67,7 +62,8 @@ export default function CreateAssessment() {
           role: data.title,
           skills: data.skills,
           difficulty: data.difficulty,
-          type: data.type
+          type: data.type,
+          includeVideoQuestions: includeVideoQuestions
         });
 
         if (!questionsRes.ok) {
@@ -166,7 +162,7 @@ export default function CreateAssessment() {
                 <FormItem>
                   <FormLabel>Assessment Title</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Senior Frontend Developer Assessment" {...field} />
+                    <Input placeholder="e.g. Executive Assistant Assessment" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -249,7 +245,7 @@ export default function CreateAssessment() {
                 <Input
                   value={newSkill}
                   onChange={(e) => setNewSkill(e.target.value)}
-                  placeholder="Add a skill (e.g. React, Node.js)"
+                  placeholder="Add a skill (e.g. Calendar Management, Email Organization)"
                   onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
                 />
                 <Button type="button" onClick={addSkill}>Add</Button>
@@ -272,6 +268,35 @@ export default function CreateAssessment() {
                 <p className="text-sm text-destructive">{form.formState.errors.skills.message}</p>
               )}
             </div>
+
+            {/* Video Question Toggle */}
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="video-questions"
+                checked={includeVideoQuestions}
+                onCheckedChange={setIncludeVideoQuestions}
+              />
+              <FormLabel htmlFor="video-questions" className="cursor-pointer flex items-center gap-2">
+                <Video className="h-4 w-4" />
+                Include video response questions
+              </FormLabel>
+            </div>
+
+            {includeVideoQuestions && (
+              <div className="rounded-md bg-muted p-4">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Video Response Questions Enabled</p>
+                    <p className="text-sm text-muted-foreground">
+                      Candidates will be prompted to record webcam video responses to certain questions. 
+                      These responses will be automatically analyzed for language proficiency, 
+                      behavioral cues, and attitude assessment.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Button 
               type="submit" 

@@ -272,4 +272,7 @@ Return detailed JSON with scores 0-10 for each category. Include speaking time p
       throw new Error(`Video analysis failed: ${error.message || "Unknown error"}`);
     }
   }
-} 
+}
+
+// Mock implementation of video analysis with Gemini
+// Remove the entire mock implementation below 

@@ -15,6 +15,7 @@ export interface IStorage {
   createSubmission(submission: any): Promise<any>;
   getSubmissionById(id: string): Promise<any | undefined>;
   getSubmissionsForAssessment(assessmentId: string): Promise<any[]>;
+  updateSubmission(id: string, data: any): Promise<any>;
   createUser(user: any): Promise<any>;
   getUserByEmail(email: string): Promise<any | undefined>;
   findOrCreateAnonymousUser(): Promise<any>;
@@ -122,6 +123,31 @@ export class MongoDBStorage implements IStorage {
     } catch (error) {
       console.error(`Failed to get submissions for assessment ${assessmentId}:`, error);
       return [];
+    }
+  }
+
+  // Add method to update existing submission
+  async updateSubmission(id: string, data: any): Promise<any> {
+    try {
+      // Validate the ID before querying
+      if (!isValidObjectId(id)) {
+        throw new Error(`Invalid submission ID format: ${id}`);
+      }
+      
+      const updatedSubmission = await Submission.findByIdAndUpdate(
+        id,
+        { ...data, updatedAt: new Date() },
+        { new: true }
+      );
+      
+      if (!updatedSubmission) {
+        throw new Error(`Submission with ID ${id} not found`);
+      }
+      
+      return updatedSubmission.toObject();
+    } catch (error) {
+      console.error(`Failed to update submission ${id}:`, error);
+      throw error;
     }
   }
 
