@@ -4,16 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Share2, Edit, PlusCircle, Play, ChevronRight } from "lucide-react";
+import { Share2, Edit, PlusCircle, Play, ChevronRight, BarChart2, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { Assessment, Question, AssessmentSubmission } from "@shared/schema";
-import { useState } from "react";
+import type { Assessment, Question, AssessmentSubmission, QuestionEvaluation } from "@shared/schema";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import React, { useEffect, useRef   } from 'react';
+import React, { useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VideoAnalysisCharts } from "@/components/video-analysis-charts";
 
 interface VideoPlayerProps {
   url: string;
@@ -126,35 +128,235 @@ export function VideoPlayer({ url, title }: VideoPlayerProps) {
   );
 }
 
+// Define the video analysis result type with the new structure
+interface VideoAnalysisResult {
+  summary: string;
+  overall_score: number;
+  participation_level?: {
+    speaking_time_percentage: string;
+    silence_periods: string;
+    score: number;
+  };
+  language_proficiency: {
+    clarity: { assessment: string; score: number } | string;
+    vocabulary: { assessment: string; score: number } | string;
+    grammar: { assessment: string; score: number } | string;
+    fluency: { assessment: string; score: number } | string;
+    effectiveness: { assessment: string; score: number } | string;
+    notes?: string;
+  };
+  behavioral_analysis: {
+    non_verbal: { assessment: string; score: number } | string;
+    active_listening: { assessment: string; score: number } | string;
+    engagement: { assessment: string; score: number } | string;
+    notes?: string;
+  };
+  attitude_assessment: {
+    professionalism: { assessment: string; score: number } | string;
+    enthusiasm: { assessment: string; score: number } | string;
+    positivity: { assessment: string; score: number } | string;
+    critical_thinking: { assessment: string; score: number } | string;
+    notes?: string;
+  };
+  critical_flags?: string[];
+  final_recommendation?: string;
+}
+
+// Helper function to safely extract text from analysis fields
+function getAssessmentText(value: any): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'object' && value !== null) {
+    if ('assessment' in value) {
+      return typeof value.assessment === 'string' ? value.assessment : '';
+    }
+    return JSON.stringify(value);
+  }
+  return typeof value === 'string' ? value : String(value);
+}
+
+// Component to display video analysis results
+function VideoAnalysisDisplay({ analysis }: { analysis: VideoAnalysisResult }) {
+  return (
+    <div className="space-y-6">
+      {/* Summary Section */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-xl font-semibold mb-2">Analysis Summary</h3>
+        <p className="text-gray-700">{typeof analysis.summary === 'string' ? analysis.summary : ''}</p>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="font-semibold">Overall Score:</span>
+          <Badge className="text-md px-2">{typeof analysis.overall_score === 'number' ? analysis.overall_score : 0}/10</Badge>
+        </div>
+      </div>
+
+      {/* Charts Section */}
+      <VideoAnalysisCharts analysis={analysis} />
+
+      {/* Detailed Analysis Sections */}
+      <Tabs defaultValue="language">
+        <TabsList className="grid grid-cols-3">
+          <TabsTrigger value="language">Language Proficiency</TabsTrigger>
+          <TabsTrigger value="behavior">Behavioral Analysis</TabsTrigger>
+          <TabsTrigger value="attitude">Attitude Assessment</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="language" className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Clarity</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.language_proficiency.clarity)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Vocabulary</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.language_proficiency.vocabulary)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Grammar</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.language_proficiency.grammar)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Fluency</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.language_proficiency.fluency)}</p>
+            </div>
+            <div className="border p-3 rounded-md col-span-2">
+              <h4 className="font-medium">Effectiveness</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.language_proficiency.effectiveness)}</p>
+            </div>
+          </div>
+          {analysis.language_proficiency.notes && (
+            <div className="mt-4">
+              <h4 className="font-medium">Additional Notes</h4>
+              <p className="text-sm text-gray-600">{typeof analysis.language_proficiency.notes === 'string' ? analysis.language_proficiency.notes : ''}</p>
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="behavior" className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Non-verbal Communication</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.behavioral_analysis.non_verbal)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Active Listening</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.behavioral_analysis.active_listening)}</p>
+            </div>
+            <div className="border p-3 rounded-md col-span-2">
+              <h4 className="font-medium">Engagement</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.behavioral_analysis.engagement)}</p>
+            </div>
+          </div>
+          {analysis.behavioral_analysis.notes && (
+            <div className="mt-4">
+              <h4 className="font-medium">Additional Notes</h4>
+              <p className="text-sm text-gray-600">{typeof analysis.behavioral_analysis.notes === 'string' ? analysis.behavioral_analysis.notes : ''}</p>
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="attitude" className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Professionalism</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.attitude_assessment.professionalism)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Enthusiasm</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.attitude_assessment.enthusiasm)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Positivity</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.attitude_assessment.positivity)}</p>
+            </div>
+            <div className="border p-3 rounded-md">
+              <h4 className="font-medium">Critical Thinking</h4>
+              <p className="text-sm text-gray-600">{getAssessmentText(analysis.attitude_assessment.critical_thinking)}</p>
+            </div>
+          </div>
+          {analysis.attitude_assessment.notes && (
+            <div className="mt-4">
+              <h4 className="font-medium">Additional Notes</h4>
+              <p className="text-sm text-gray-600">{typeof analysis.attitude_assessment.notes === 'string' ? analysis.attitude_assessment.notes : ''}</p>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// Define the TestResult interface
+interface TestResult {
+  passed: boolean;
+  input: string;
+  expectedOutput: string;
+  actualOutput: string;
+}
+
+// MongoDB compatible submission interface
+interface MongoDbSubmission {
+  _id: string;
+  assessmentId: string;
+  candidateId?: string;
+  candidateName: string;
+  submittedAt: string;
+  answers: Record<string, string>;
+  evaluations: QuestionEvaluation[];
+  totalScore: number;
+  screenRecordingUrl: string | null;
+  webcamRecordingUrl: string | null;
+}
+
 export default function AssessmentView() {
   const { id } = useParams();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
-  const [selectedSubmission, setSelectedSubmission] = useState<AssessmentSubmission | null>(null);
+  const [selectedSubmission, setSelectedSubmission] = useState<MongoDbSubmission | null>(null);
+  const [videoAnalysis, setVideoAnalysis] = useState<VideoAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Redirect if ID is invalid
+  useEffect(() => {
+    if (!id || id === "undefined") {
+      console.warn("Invalid assessment ID, redirecting to dashboard");
+      toast({
+        title: "Error",
+        description: "Invalid assessment ID. Please select a valid assessment.",
+        variant: "destructive",
+      });
+      navigate("/");
+      return;
+    }
+  }, [id, navigate, toast]);
+
+  // Don't fetch if ID is invalid
+  const validId = id && id !== "undefined" ? id : null;
 
   // Fetch assessment
   const { data: assessment, isLoading } = useQuery<Assessment>({
-    queryKey: [`/api/assessments/${id}`],
+    queryKey: [`/api/assessments/${validId}`],
+    enabled: !!validId, // Only run query if we have a valid ID
   });
 
   // Fetch submissions for this assessment
-  const { data: submissions, isLoading: isLoadingSubmissions } = useQuery<AssessmentSubmission[]>({
-    queryKey: [`/api/assessments/${id}/submissions`],
-    enabled: !!id,
+  const { data: submissions, isLoading: isLoadingSubmissions } = useQuery<MongoDbSubmission[]>({
+    queryKey: [`/api/assessments/${validId}/submissions`],
+    enabled: !!validId, // Only run query if we have a valid ID
   });
 
   const updateAssessment = useMutation({
     mutationFn: async (updates: Partial<Assessment>) => {
-      const res = await apiRequest("PATCH", `/api/assessments/${id}`, updates);
+      const res = await apiRequest("PATCH", `/api/assessments/${validId}`, updates);
       if (!res.ok) {
         throw new Error("Failed to update assessment");
       }
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/assessments/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/assessments/${validId}`] });
       setIsEditing(false);
       toast({
         title: "Success",
@@ -206,7 +408,7 @@ export default function AssessmentView() {
   });
 
   const copyShareLink = () => {
-    const shareUrl = `${window.location.origin}/take-assessment/${id}`;
+    const shareUrl = `${window.location.origin}/take-assessment/${validId}`;
     navigator.clipboard.writeText(shareUrl);
     toast({
       title: "Link Copied",
@@ -218,6 +420,36 @@ export default function AssessmentView() {
     if (!assessment) return;
     updateAssessment.mutate(assessment);
   };
+
+  // Video analysis mutation
+  const analyzeVideo = useMutation({
+    mutationFn: async (submissionId: string) => {
+      setIsAnalyzing(true);
+      try {
+        const res = await apiRequest("POST", `/api/submissions/${submissionId}/analyze`);
+        if (!res.ok) {
+          throw new Error("Failed to analyze video");
+        }
+        return res.json();
+      } finally {
+        setIsAnalyzing(false);
+      }
+    },
+    onSuccess: (data) => {
+      setVideoAnalysis(data);
+      toast({
+        title: "Analysis Complete",
+        description: "Video analysis has been completed successfully.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Analysis Failed",
+        description: error.message || "Failed to analyze the interview video",
+        variant: "destructive",
+      });
+    },
+  });
 
   if (isLoading) {
     return <AssessmentSkeleton />;
@@ -238,7 +470,7 @@ export default function AssessmentView() {
               value={assessment.title}
               onChange={(e) => {
                 const newAssessment = { ...assessment, title: e.target.value };
-                queryClient.setQueryData([`/api/assessments/${id}`], newAssessment);
+                queryClient.setQueryData([`/api/assessments/${validId}`], newAssessment);
               }}
               className="text-3xl font-bold"
             />
@@ -250,7 +482,7 @@ export default function AssessmentView() {
               value={assessment.description}
               onChange={(e) => {
                 const newAssessment = { ...assessment, description: e.target.value };
-                queryClient.setQueryData([`/api/assessments/${id}`], newAssessment);
+                queryClient.setQueryData([`/api/assessments/${validId}`], newAssessment);
               }}
               className="mt-2"
             />
@@ -276,7 +508,7 @@ export default function AssessmentView() {
             <Edit className="h-4 w-4 mr-2" />
             {isEditing ? "Save Changes" : "Edit"}
           </Button>
-          <Button onClick={() => navigate(`/take-assessment/${id}`)}>
+          <Button onClick={() => navigate(`/take-assessment/${validId}`)}>
             <Play className="h-4 w-4 mr-2" />
             Take Assessment
           </Button>
@@ -295,28 +527,70 @@ export default function AssessmentView() {
                     By {selectedSubmission.candidateName} on {new Date(selectedSubmission.submittedAt).toLocaleString()}
                   </p>
                 </div>
-                <Button variant="outline" onClick={() => setSelectedSubmission(null)}>
+                <Button variant="outline" onClick={() => {
+                  setSelectedSubmission(null);
+                  setVideoAnalysis(null);
+                }}>
                   Back to List
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {/* Video Recordings Section with improved error handling */}
+              {/* Video Recordings Section with analysis button */}
               {(selectedSubmission.webcamRecordingUrl || selectedSubmission.screenRecordingUrl) && (
-                <div className="mb-8 grid grid-cols-2 gap-4">
-                  {selectedSubmission.webcamRecordingUrl && (
-                    <VideoPlayer 
-                      url={selectedSubmission.webcamRecordingUrl} 
-                      title="Webcam Recording" 
-                    />
-                  )}
-                  {selectedSubmission.screenRecordingUrl && (
-                    <VideoPlayer 
-                      url={selectedSubmission.screenRecordingUrl} 
-                      title="Screen Recording" 
-                    />
-                  )}
+                <div className="mb-8">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-medium">Recordings</h3>
+                    {selectedSubmission.webcamRecordingUrl && !isAnalyzing && (
+                      <Button 
+                        onClick={() => analyzeVideo.mutate(selectedSubmission._id)} 
+                        variant="outline"
+                        disabled={isAnalyzing || !!videoAnalysis}
+                      >
+                        {isAnalyzing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : videoAnalysis ? (
+                          "Analysis Complete"
+                        ) : (
+                          <>
+                            <BarChart2 className="h-4 w-4 mr-2" />
+                            Analyze Interview
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    {selectedSubmission.webcamRecordingUrl && (
+                      <VideoPlayer 
+                        url={selectedSubmission.webcamRecordingUrl} 
+                        title="Webcam Recording" 
+                      />
+                    )}
+                    {selectedSubmission.screenRecordingUrl && (
+                      <VideoPlayer 
+                        url={selectedSubmission.screenRecordingUrl} 
+                        title="Screen Recording" 
+                      />
+                    )}
+                  </div>
                 </div>
+              )}
+
+              {/* Video Analysis Results Section */}
+              {videoAnalysis && (
+                <Card className="mb-8">
+                  <CardHeader>
+                    <CardTitle>Interview Analysis</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <VideoAnalysisDisplay analysis={videoAnalysis} />
+                  </CardContent>
+                </Card>
               )}
 
               {/* Answers and Evaluations */}
@@ -345,7 +619,10 @@ export default function AssessmentView() {
                       {evaluation.testResults && (
                         <div className="mt-2 space-y-2">
                           <p className="text-sm font-medium">Test Results:</p>
-                          {evaluation.testResults.map((test, i) => (
+                          {(typeof evaluation.testResults === 'string' 
+                            ? JSON.parse(evaluation.testResults) as TestResult[]
+                            : evaluation.testResults as TestResult[] || []
+                          ).map((test: TestResult, i: number) => (
                             <div key={i} className="text-sm bg-muted p-2 rounded">
                               <div className="flex items-center gap-2">
                                 <Badge variant={test.passed ? "default" : "destructive"}>
@@ -397,8 +674,8 @@ export default function AssessmentView() {
                   <Skeleton className="h-32 w-full" />
                 ) : submissions && submissions.length > 0 ? (
                   <div className="space-y-2">
-                    {submissions.map((submission: AssessmentSubmission) => (
-                      <Card key={submission.id} className="cursor-pointer hover:bg-accent/50 transition-colors"
+                    {submissions.map((submission: MongoDbSubmission) => (
+                      <Card key={submission._id} className="cursor-pointer hover:bg-accent/50 transition-colors"
                         onClick={() => setSelectedSubmission(submission)}>
                         <CardContent className="p-4 flex justify-between items-center">
                           <div>

@@ -103,53 +103,7 @@ import { pgTable, text, serial, integer, boolean, jsonb } from "drizzle-orm/pg-c
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const assessments = pgTable("assessments", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  description: text("description").notNull(),
-  type: text("type").notNull(), // cognitive, technical, situational
-  questions: jsonb("questions").notNull().default([]),
-  createdById: integer("created_by_id").notNull(),
-  requiresRecording: boolean("requires_recording").notNull().default(false),
-});
-
- 
-
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  role: text("role").notNull().default("candidate"),
-});
-
-export const assessmentSubmissions = pgTable("assessment_submissions", {
-  id: serial("id").primaryKey(),
-  assessmentId: integer("assessment_id").notNull(),
-  candidateId: integer("candidate_id").notNull(),
-  candidateName: text("candidate_name").notNull(),
-  submittedAt: text("submitted_at").notNull(),
-  answers: jsonb("answers").notNull(),
-  evaluations: jsonb("evaluations").notNull(),
-  totalScore: integer("total_score").notNull(),
-  screenRecordingUrl: text("screen_recording_url"),
-  webcamRecordingUrl: text("webcam_recording_url"),
-});
-
- 
-
-// Export schemas
-export const insertAssessmentSchema = createInsertSchema(assessments).omit({ id: true });
- export const insertUserSchema = createInsertSchema(users).omit({ id: true });
-export const insertAssessmentSubmissionSchema = createInsertSchema(assessmentSubmissions).omit({ id: true });
-
-// Export types
-export type Assessment = typeof assessments.$inferSelect;
-export type User = typeof users.$inferSelect;
-export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type InsertAssessmentSubmission = z.infer<typeof insertAssessmentSubmissionSchema>;
- 
-
+// Define Question type first (needed for assessments table)
 export type Question = {
   id: string;
   type: "multiple_choice" | "open_ended" | "coding";
@@ -167,6 +121,26 @@ export type Question = {
   skills?: string[];
 };
 
+// Assessments Table
+export const assessments = pgTable("assessments", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  type: text("type").notNull(), // cognitive, technical, situational
+  questions: jsonb("questions").$type<Question[]>().notNull().default([]),
+  createdById: integer("created_by_id").notNull(),
+  requiresRecording: boolean("requires_recording").notNull().default(false),
+});
+
+// Users Table
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+  role: text("role").notNull().default("candidate"),
+});
+
+// Define QuestionEvaluation type needed for assessmentSubmissions
 export type QuestionEvaluation = {
   isCorrect: boolean;
   score: number;
@@ -180,18 +154,36 @@ export type QuestionEvaluation = {
   }>;
 };
 
-export type AssessmentSubmission = {
-  id: number;
-  assessmentId: number;
-  candidateId: number;
-  candidateName: string;
-  submittedAt: string;
-  answers: Record<string, string>;
-  evaluations: QuestionEvaluation[];
-  totalScore: number;
-  screenRecordingUrl?: string;
-  webcamRecordingUrl?: string;
-};
+// Assessment Submissions Table
+export const assessmentSubmissions = pgTable("assessment_submissions", {
+  id: serial("id").primaryKey(),
+  assessmentId: integer("assessment_id").notNull(),
+  candidateId: integer("candidate_id").notNull(),
+  candidateName: text("candidate_name").notNull(),
+  submittedAt: text("submitted_at").notNull(),
+  answers: jsonb("answers").$type<Record<string, string>>().notNull(),
+  evaluations: jsonb("evaluations").$type<QuestionEvaluation[]>().notNull(),
+  totalScore: integer("total_score").notNull(),
+  screenRecordingUrl: text("screen_recording_url"),
+  webcamRecordingUrl: text("webcam_recording_url"),
+});
+
+// Zod Schemas for Inserts
+export const insertAssessmentSchema = createInsertSchema(assessments).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertAssessmentSubmissionSchema = createInsertSchema(assessmentSubmissions).omit({ id: true });
+
+// Drizzle Inferred Select Types
+export type Assessment = typeof assessments.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type AssessmentSubmission = typeof assessmentSubmissions.$inferSelect;
+
+// Zod Inferred Insert Types
+export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertAssessmentSubmission = z.infer<typeof insertAssessmentSubmissionSchema>;
+
+// Question type is defined at the top
 
 
  

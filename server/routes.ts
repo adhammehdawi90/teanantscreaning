@@ -2,7 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import {
   insertAssessmentSchema,
-  insertVideoInterviewSchema,
+  AssessmentSubmission,
+  Question,
+  QuestionEvaluation
 } from "@shared/schema";
 import { generateQuestions } from "./lib/openai";
 import { ZodError } from "zod";
@@ -11,7 +13,8 @@ import { dirname } from "path";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
-import { storage } from "./storage";
+import storage from "./storage";
+import { analyzeInterviewVideo } from "./lib/gemini";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -135,7 +138,7 @@ export function registerRoutes(app: Express): Server {
               urls[`${fieldname}Url`] = publicUrl;
 
               console.log(`Generated public URL for ${fieldname}:`, publicUrl);
-            } catch (error) {
+            } catch (error: any) {
               console.error(
                 `File verification failed for ${file.filename}:`,
                 error
@@ -149,103 +152,64 @@ export function registerRoutes(app: Express): Server {
 
         console.log("Returning URLs:", urls);
         res.json(urls);
-      } catch (error: any) {
+      } catch (error) {
         console.error("Video upload error:", error);
-        res.status(500).json({ error: error.message });
+        const message = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: message });
       }
     }
   );
-  // Update video upload endpoint
-  //  // Update video upload endpoint
-  // app.post("/api/assessments/:id/upload-videos", videoUpload.fields([
-  //   { name: 'webcamVideo', maxCount: 1 },
-  //   { name: 'screenVideo', maxCount: 1 }
-  // ]), async (req, res) => {
-  //   try {
-  //     console.log("Starting video upload process...");
-
-  //     // Type assertion for files
-  //     const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-
-  //     if (!files || Object.keys(files).length === 0) {
-  //       console.warn('No files were uploaded');
-  //       return res.status(400).json({ error: 'No files were uploaded' });
-  //     }
-
-  //     // Process each uploaded file
-  //     const urls: Record<string, string> = {};
-  //     for (const [fieldname, fieldFiles] of Object.entries(files)) {
-  //       if (fieldFiles && fieldFiles.length > 0) {
-  //         const file = fieldFiles[0];
-
-  //         console.log(`Processing ${fieldname}:`, {
-  //           originalName: file.originalname,
-  //           savedPath: file.path,
-  //           size: file.size,
-  //           mimetype: file.mimetype
-  //         });
-
-  //         // Verify file exists and is readable
-  //         try {
-  //           await fs.promises.access(file.path, fs.constants.R_OK);
-  //           const stats = await fs.promises.stat(file.path);
-  //           console.log(`File ${file.filename} verified:`, stats);
-
-  //           // Generate public URL
-  //           const relativeUrl = path.relative(config.uploads.directory, file.path);
-  //           const publicUrl = `${config.uploads.publicPath}/${relativeUrl.replace(/\\/g, '/')}`;
-  //           urls[`${fieldname}Url`] = publicUrl;
-
-  //           console.log(`Generated public URL for ${fieldname}:`, publicUrl);
-  //         } catch (error) {
-  //           console.error(`File verification failed for ${file.filename}:`, error);
-  //           return res.status(500).json({ error: `File verification failed: ${error.message}` });
-  //         }
-  //       }
-  //     }
-
-  //     console.log('Returning URLs:', urls);
-  //     res.json(urls);
-  //   } catch (error: any) {
-  //     console.error('Video upload error:', error);
-  //     res.status(500).json({ error: error.message });
-  //   }
-  // });
 
   // Assessments
   app.post("/api/assessments", async (req, res) => {
     try {
       console.log("Creating assessment with data:", req.body);
-      const data = insertAssessmentSchema.parse(req.body);
-      const assessment = await storage.createAssessment(data);
+      
+      // Clone the request body to avoid modifying the original
+      const assessmentData = { ...req.body };
+      
+      // Handle questions if it's a string
+      if (typeof assessmentData.questions === 'string') {
+        try {
+          assessmentData.questions = JSON.parse(assessmentData.questions);
+          console.log("Parsed questions from string:", assessmentData.questions);
+        } catch (parseError) {
+          console.error("Error parsing questions string:", parseError);
+          return res.status(400).json({
+            error: "Invalid questions format. Expected valid JSON array."
+          });
+        }
+      }
+      
+      const assessment = await storage.createAssessment(assessmentData);
       console.log("Assessment created:", assessment);
       res.json(assessment);
     } catch (err) {
       console.error("Error creating assessment:", err);
-      const error = err as Error | ZodError;
+      const message = (err as any)?.message || String(err);
       res.status(400).json({
-        error: "message" in error ? error.message : error.toString(),
+        error: message,
       });
     }
   });
 
   app.patch("/api/assessments/:id", async (req, res) => {
     try {
-      const id = Number(req.params.id);
+      const id = req.params.id;
       const assessment = await storage.updateAssessment(id, req.body);
       res.json(assessment);
     } catch (err) {
       console.error("Error updating assessment:", err);
-      const error = err as Error | ZodError;
+      const message = (err as any)?.message || String(err);
       res.status(400).json({
-        error: "message" in error ? error.message : error.toString(),
+        error: message,
       });
     }
   });
 
   app.get("/api/assessments", async (req, res) => {
     try {
-      const assessments = await storage.listAssessments();
+      const assessments = await storage.getAllAssessments();
       res.json(assessments);
     } catch (err) {
       console.error("Error listing assessments:", err);
@@ -255,7 +219,15 @@ export function registerRoutes(app: Express): Server {
 
   app.get("/api/assessments/:id", async (req, res) => {
     try {
-      const assessment = await storage.getAssessment(Number(req.params.id));
+      const id = req.params.id;
+      
+      // Check if ID is undefined or invalid
+      if (!id || id === "undefined") {
+        console.log("Invalid assessment ID provided:", id);
+        return res.status(400).json({ error: "Invalid assessment ID provided" });
+      }
+      
+      const assessment = await storage.getAssessmentById(id);
       if (!assessment) {
         res.status(404).json({ error: "Assessment not found" });
         return;
@@ -270,8 +242,15 @@ export function registerRoutes(app: Express): Server {
   // Update the existing submissions endpoint
   app.get("/api/assessments/:id/submissions", async (req, res) => {
     try {
-      console.log("Fetching submissions for assessment:", req.params.id);
-      const id = Number(req.params.id);
+      const id = req.params.id;
+      
+      // Check if ID is undefined or invalid
+      if (!id || id === "undefined") {
+        console.log("Invalid assessment ID provided:", id);
+        return res.status(400).json({ error: "Invalid assessment ID provided" });
+      }
+      
+      console.log("Fetching submissions for assessment:", id);
       const submissions = await storage.getSubmissionsForAssessment(id);
       console.log("Found submissions:", submissions);
       res.json(submissions);
@@ -281,35 +260,36 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Update the submit endpoint to include evaluation
+  // Update the submit endpoint to use MongoDB
   app.post("/api/assessments/:id/submit", async (req, res) => {
     try {
       console.log("Submitting assessment:", req.params.id);
-      const id = Number(req.params.id);
-      const { answers, webcamRecordingUrl, screenRecordingUrl } = req.body;
+      const id = req.params.id;
+      const { answers, webcamRecordingUrl, screenRecordingUrl, candidateName } = req.body;
 
       console.log("Answers received:", answers);
 
-      const assessment = await storage.getAssessment(id);
+      const assessment = await storage.getAssessmentById(id);
       if (!assessment) {
         res.status(404).json({ error: "Assessment not found" });
         return;
       }
 
-      // Evaluate each answer
-      const questions = assessment.questions as Question[];
-      const evaluations: QuestionEvaluation[] = [];
+      // Evaluate answers
+      const questions = assessment.questions || [];
+      const evaluations = [];
       let totalScore = 0;
 
       for (const question of questions) {
-        const answer = answers[question.id];
-        console.log(`Evaluating question ${question.id}, answer:`, answer);
+        const answer = answers[question._id || question.id];
+        console.log(`Evaluating question ${question._id || question.id}, answer:`, answer);
 
-        let evaluation: QuestionEvaluation = {
-          questionId: question.id,
+        let evaluation = {
+          questionId: question._id || question.id,
           isCorrect: false,
           score: 0,
           feedback: "",
+          testResults: undefined as any
         };
 
         if (question.type === "multiple_choice") {
@@ -334,7 +314,8 @@ export function registerRoutes(app: Express): Server {
             if (passed) passedTests++;
           }
 
-          evaluation.testResults = testResults;
+          // Convert testResults to a string to match the MongoDB schema
+          evaluation.testResults = JSON.stringify(testResults);
           evaluation.score = Math.round(
             (passedTests / question.testCases.length) * 100
           );
@@ -351,16 +332,32 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Calculate average score
-      totalScore = Math.round(totalScore / questions.length);
+      totalScore = Math.round(totalScore / (questions.length || 1));
 
       console.log("Creating submission with evaluations:", evaluations);
+
+      // Create a temporary anonymous user for submissions if no user is provided
+      let candidateId;
+      if (req.body.candidateId && req.body.candidateId !== "anonymous") {
+        candidateId = req.body.candidateId;
+      } else {
+        // Create an anonymous user or find existing one
+        try {
+          const anonymousUser = await storage.findOrCreateAnonymousUser();
+          candidateId = anonymousUser._id;
+        } catch (error) {
+          console.error("Failed to create anonymous user:", error);
+          // Fallback option: if we can't create a user, make candidateId null
+          candidateId = null;
+        }
+      }
 
       // Create submission record with video URLs
       const submission = await storage.createSubmission({
         assessmentId: id,
-        candidateId: 1, // TODO: Replace with actual candidate ID
-        candidateName: "John Doe", // TODO: Replace with actual candidate name
-        submittedAt: new Date().toISOString(),
+        candidateId,
+        candidateName: candidateName || "Anonymous Candidate",
+        submittedAt: new Date(),
         answers,
         evaluations,
         totalScore,
@@ -378,7 +375,56 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
- 
+
+  // --- Video Analysis Endpoint ---
+  app.post("/api/submissions/:submissionId/analyze", async (req, res) => {
+    try {
+      const submissionId = req.params.submissionId;
+      console.log(`Received request to analyze submission ID: ${submissionId}`);
+
+      // Get the submission from MongoDB
+      const submission = await storage.getSubmissionById(submissionId);
+
+      if (!submission) {
+        console.error(`Submission not found: ${submissionId}`);
+        return res.status(404).json({ error: "Submission not found" });
+      }
+
+      // Decide which video to analyze (e.g., webcam)
+      const videoUrl = submission.webcamRecordingUrl;
+      if (!videoUrl) {
+        console.warn(`No webcam video URL found for submission ${submissionId}`);
+        return res.status(400).json({ error: "No webcam video found for analysis" });
+      }
+
+      // Construct the full local path to the video file
+      // videoUrl is like "/uploads/filename.webm"
+      const videoFileName = path.basename(videoUrl);
+      const fullVideoPath = path.join(__dirname, "../uploads", videoFileName);
+      console.log(`Analyzing video file at path: ${fullVideoPath}`);
+
+      if (!fs.existsSync(fullVideoPath)) {
+        console.error(`Video file not found at path: ${fullVideoPath}`);
+        return res.status(404).json({ error: "Video file not found on server" });
+      }
+
+      // Analyze the video without mock responses
+      const analysisResult = await analyzeInterviewVideo(fullVideoPath, false);
+      console.log(`Analysis complete for submission ${submissionId}`);
+      
+      res.json(analysisResult);
+    } catch (err) {
+      console.error(
+        `Error analyzing video for submission ${req.params.submissionId}:`,
+        err
+      );
+      const message = (err as any)?.message || "Unknown error during video analysis";
+      res.status(500).json({
+        error: message
+      });
+    }
+  });
+  // --- End Video Analysis Endpoint ---
 
   // Question Generation
   app.post("/api/generate-questions", async (req, res) => {
@@ -412,42 +458,7 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
- 
- 
+
   const httpServer = createServer(app);
   return httpServer;
-}
-
-interface Question {
-  id: string;
-  type: "multiple_choice" | "coding" | "open_ended";
-  text: string;
-  correctAnswer?: string;
-  testCases?: { input: string; expectedOutput: string }[];
-}
-
-interface QuestionEvaluation {
-  questionId: string;
-  isCorrect: boolean;
-  score: number;
-  feedback: string;
-  testResults?: {
-    passed: boolean;
-    input: string;
-    expectedOutput: string;
-    actualOutput: string;
-  }[];
-}
-
-interface Submission {
-  id?: number;
-  assessmentId: number;
-  candidateId: number;
-  candidateName: string;
-  submittedAt: string;
-  answers: { [questionId: string]: string };
-  evaluations: QuestionEvaluation[];
-  totalScore: number;
-  webcamRecordingUrl?: string;
-  screenRecordingUrl?: string;
 }

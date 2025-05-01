@@ -8,21 +8,17 @@ export default function Nav() {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-8">
-            <Link href="/">
-              <a className="text-xl font-bold text-primary">AssessmentPro</a>
+            <Link href="/" className="text-xl font-bold text-primary">
+              AssessmentPro
             </Link>
             <div className="flex gap-4">
-              <Link href="/">
-                <a className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-                  <Layout size={18} />
-                  Dashboard
-                </a>
+              <Link href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+                <Layout size={18} />
+                Dashboard
               </Link>
-              {/* <Link href="/video-interview/new">
-                <a className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
-                  <Video size={18} />
-                  Interviews
-                </a>
+              {/* <Link href="/video-interview/new" className="flex items-center gap-2 text-muted-foreground hover:text-foreground">
+                <Video size={18} />
+                Interviews
               </Link> */}
               {/* <Link href="/video-interview/new">
                 <Button variant="ghost">

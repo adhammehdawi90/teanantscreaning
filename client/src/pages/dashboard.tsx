@@ -24,7 +24,7 @@ export default function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {assessments?.map((assessment) => (
-          <Link key={assessment.id} href={`/assessment/${assessment.id}`}>
+          <Link key={assessment._id} href={`/assessment/${assessment._id}`}>
             <Card className="cursor-pointer hover:bg-muted/50 transition-colors">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-lg font-medium">
