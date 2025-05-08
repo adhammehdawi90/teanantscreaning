@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx server/index.ts",
-    "build": "tsc && vite build && npm run build:server",
+    "build": "tsc && vite build && npm run build:server && node fix-imports.js",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node --experimental-specifier-resolution=node dist/server/index.js",
     "check": "tsc",
