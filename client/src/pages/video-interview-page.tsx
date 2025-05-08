@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { VideoInterview } from '@/components/VideoInterview';
+import { VideoInterview } from '@/components/video-interview';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { useParams, useLocation } from 'wouter';
 

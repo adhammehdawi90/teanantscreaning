@@ -1,11 +1,13 @@
 import React, { useRef, useState, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Video, Monitor, Camera } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '../client/src/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../client/src/components/ui/card';
+import { AlertCircle, Video, Monitor, Camera, Mic, MicOff } from 'lucide-react';
+import { Alert, AlertDescription } from '../client/src/components/ui/alert';
+import SpeechRecognizer from '../client/src/lib/speech-recognition';
+import { Textarea } from '../client/src/components/ui/textarea';
 
 export interface VideoRecorderProps {
-  onRecordingComplete: (blob: Blob) => void;
+  onRecordingComplete: (blob: Blob, transcript?: string) => void;
   onError: (error: Error) => void;
   type: 'webcam' | 'screen';
   maxDuration?: number;
@@ -15,6 +17,7 @@ export interface VideoRecorderRef {
   stopRecording: () => Promise<void>;
   cleanup: () => void;
   getCurrentBlob: () => Blob | null;
+  getCurrentTranscript: () => string;
 }
 
 export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
@@ -23,12 +26,53 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
     const [status, setStatus] = useState<string>('Click Start Recording to begin');
     const [error, setError] = useState<string | null>(null);
     const [recordingTime, setRecordingTime] = useState(0);
+    const [transcript, setTranscript] = useState<string>('');
+    const [isSpeechRecognitionSupported, setIsSpeechRecognitionSupported] = useState(true);
+    const [showManualTranscript, setShowManualTranscript] = useState(false);
+    
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const videoRef = useRef<HTMLVideoElement>(null);
     const finalBlobRef = useRef<Blob | null>(null);
     const timerRef = useRef<NodeJS.Timeout>();
+    const speechRecognizerRef = useRef<SpeechRecognizer | null>(null);
+
+    useEffect(() => {
+      // Initialize speech recognizer
+      speechRecognizerRef.current = new SpeechRecognizer({
+        onResult: (text, isFinal) => {
+          console.log("Speech recognition onResult:", text);
+          setTranscript(text);
+        },
+        onError: (event) => {
+          console.error('Speech recognition error:', event);
+          setShowManualTranscript(true); // Show manual input on error
+        },
+        onStart: () => {
+          console.log("Speech recognition started");
+        },
+        onEnd: () => {
+          console.log("Speech recognition ended");
+        }
+      });
+      
+      // Check if speech recognition is supported
+      const isSupported = speechRecognizerRef.current.isRecognitionSupported();
+      console.log("Speech recognition supported:", isSupported);
+      setIsSpeechRecognitionSupported(isSupported);
+      
+      // If not supported, show manual transcript input
+      if (!isSupported) {
+        setShowManualTranscript(true);
+      }
+      
+      return () => {
+        if (speechRecognizerRef.current) {
+          speechRecognizerRef.current.stop();
+        }
+      };
+    }, []);
 
     const cleanup = () => {
       if (mediaRecorderRef.current) {
@@ -53,6 +97,11 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      
+      // Stop speech recognition
+      if (speechRecognizerRef.current) {
+        speechRecognizerRef.current.stop();
+      }
 
       chunksRef.current = [];
       finalBlobRef.current = null;
@@ -76,6 +125,12 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
         setError(null);
         setStatus('Initializing...');
         cleanup();
+        setTranscript('');
+
+        // Reset speech recognizer if needed
+        if (speechRecognizerRef.current) {
+          speechRecognizerRef.current.reset();
+        }
 
         let stream: MediaStream;
         if (type === 'webcam') {
@@ -130,7 +185,24 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
             }
 
             finalBlobRef.current = blob;
-            onRecordingComplete(blob);
+            
+            // Get the final transcript
+            const finalTranscript = transcript;
+            console.log("Final transcript on stop:", finalTranscript);
+            
+            // Stop speech recognition
+            if (speechRecognizerRef.current) {
+              speechRecognizerRef.current.stop();
+            }
+            
+            // Always send the transcript, even if manually entered
+            console.log("Sending blob and transcript to parent:", {
+              blobSize: blob.size,
+              transcriptLength: finalTranscript.length
+            });
+            
+            // Pass final transcript to parent
+            onRecordingComplete(blob, finalTranscript);
             setStatus('Recording completed');
             setIsRecording(false);
           } catch (error) {
@@ -142,6 +214,11 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
         mediaRecorder.start(1000); // Capture in 1-second chunks
         setIsRecording(true);
         setStatus('Recording in progress');
+        
+        // Start speech recognition if supported
+        if (speechRecognizerRef.current && isSpeechRecognitionSupported) {
+          speechRecognizerRef.current.start();
+        }
 
         // Start timer
         let time = 0;
@@ -166,6 +243,12 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
         if (mediaRecorderRef.current?.state === 'recording') {
           setStatus('Finishing recording...');
           mediaRecorderRef.current.stop();
+          
+          // Stop speech recognition
+          if (speechRecognizerRef.current) {
+            speechRecognizerRef.current.stop();
+          }
+          
           resolve();
         } else {
           resolve();
@@ -173,10 +256,16 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
       });
     };
 
+    // Add a manual transcript toggle
+    const toggleManualTranscript = () => {
+      setShowManualTranscript(!showManualTranscript);
+    };
+
     useImperativeHandle(ref, () => ({
       cleanup,
       stopRecording,
-      getCurrentBlob: () => finalBlobRef.current
+      getCurrentBlob: () => finalBlobRef.current,
+      getCurrentTranscript: () => transcript
     }));
 
     return (
@@ -189,6 +278,11 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
               <Monitor className="h-5 w-5" />
             )}
             {type === 'webcam' ? 'Webcam' : 'Screen'} Recording
+            {isSpeechRecognitionSupported && (
+              <span className="ml-auto text-xs text-gray-500 flex items-center">
+                <Mic className="h-3 w-3 mr-1" /> Speech Recognition {isRecording ? 'Active' : 'Ready'}
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -209,6 +303,48 @@ export const VideoRecorder = forwardRef<VideoRecorderRef, VideoRecorderProps>(
               <div className="absolute top-4 right-4 bg-red-500 text-white px-2 py-1 rounded-md text-sm flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
                 {formatTime(recordingTime)}
+              </div>
+            )}
+          </div>
+
+          {/* Replace the transcript display with this enhanced version */}
+          <div className="mt-2 border border-gray-200 rounded-md">
+            <div className="flex justify-between items-center p-2 bg-gray-50 border-b">
+              <p className="text-xs text-gray-500">Transcript:</p>
+              {type === 'webcam' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={toggleManualTranscript}
+                  className="h-6 text-xs"
+                >
+                  {showManualTranscript ? "Hide Manual Input" : "Manual Input"}
+                </Button>
+              )}
+            </div>
+            
+            {showManualTranscript ? (
+              <div className="p-2">
+                <Textarea
+                  placeholder="Type transcript manually here..."
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  className="min-h-[100px] text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Speech recognition unavailable or disabled. You can type your transcript manually.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 bg-white min-h-[100px] max-h-[150px] overflow-y-auto">
+                <p className="text-sm">
+                  {transcript || (isRecording ? 'Listening... (speak now)' : 'Transcript will appear here when you speak...')}
+                </p>
+                {isRecording && !transcript && (
+                  <p className="text-xs text-orange-500 mt-2">
+                    No speech detected. Make sure your microphone is working and permissions are granted.
+                  </p>
+                )}
               </div>
             )}
           </div>

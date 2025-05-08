@@ -29,6 +29,11 @@ export function VideoInterview({ questions, onComplete }: VideoInterviewProps) {
   const isLastQuestion = currentQuestionIndex === questions.length - 1;
   const hasRecordedCurrent = recordings.some(r => r.questionId === currentQuestion.id);
 
+  // Handler function to convert Error to string for state
+  const handleError = (error: Error) => {
+    setError(error.message);
+  };
+
   const handleRecordingComplete = async (blob: Blob) => {
     try {
       setIsUploading(true);
@@ -60,10 +65,10 @@ export function VideoInterview({ questions, onComplete }: VideoInterviewProps) {
       setIsRecording(false);
     } catch (error) {
       console.error('Recording error:', error);
-      setError(error.message);
+      setError(error instanceof Error ? error.message : String(error));
       toast({
         title: "Recording Error",
-        description: error.message,
+        description: error instanceof Error ? error.message : String(error),
         variant: "destructive"
       });
     } finally {
@@ -119,7 +124,7 @@ export function VideoInterview({ questions, onComplete }: VideoInterviewProps) {
             ref={recorderRef}
             type="webcam"
             onRecordingComplete={handleRecordingComplete}
-            onError={setError}
+            onError={handleError}
             maxDuration={currentQuestion.maxDuration || 300} // 5 minutes default
           />
 

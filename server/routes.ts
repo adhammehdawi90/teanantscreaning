@@ -16,6 +16,7 @@ import fs from "fs";
 import storage from "./storage";
 import { analyzeInterviewVideo } from "./lib/gemini";
 import { registerVideoAssessmentRoutes } from "./routes/video-assessment";
+import transcriptTools from './utils/transcript-tools';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -266,9 +267,16 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log("Submitting assessment:", req.params.id);
       const id = req.params.id;
-      const { answers, webcamRecordingUrl, screenRecordingUrl, candidateName } = req.body;
+      const { 
+        answers, 
+        webcamRecordingUrl, 
+        screenRecordingUrl, 
+        candidateName,
+        transcript 
+      } = req.body;
 
       console.log("Answers received:", answers);
+      console.log("Transcript received:", transcript);
 
       const assessment = await storage.getAssessmentById(id);
       if (!assessment) {
@@ -353,7 +361,7 @@ export function registerRoutes(app: Express): Server {
         }
       }
 
-      // Create submission record with video URLs
+      // Create submission record with video URLs and transcript
       const submission = await storage.createSubmission({
         assessmentId: id,
         candidateId,
@@ -364,6 +372,7 @@ export function registerRoutes(app: Express): Server {
         totalScore,
         webcamRecordingUrl,
         screenRecordingUrl,
+        transcript: transcript || ""
       });
 
       console.log("Submission created:", submission);
@@ -462,6 +471,84 @@ export function registerRoutes(app: Express): Server {
 
   // Register video assessment routes
   registerVideoAssessmentRoutes(app);
+
+  // Add a debug endpoint to check submission transcripts
+  app.get("/api/debug/submission/:id", async (req, res) => {
+    try {
+      const submissionId = req.params.id;
+      console.log(`[DEBUG] Fetching submission details for ID: ${submissionId}`);
+      
+      const submission = await storage.getSubmissionById(submissionId);
+      if (!submission) {
+        return res.status(404).json({ error: "Submission not found" });
+      }
+      
+      // Log the full submission details for debugging
+      console.log("[DEBUG] Submission details:", {
+        id: submission._id,
+        hasTranscript: !!submission.transcript,
+        transcriptLength: submission.transcript ? submission.transcript.length : 0,
+        transcriptSample: submission.transcript ? submission.transcript.substring(0, 100) + "..." : null,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt
+      });
+      
+      // Return simplified submission with focus on transcript
+      res.json({
+        id: submission._id,
+        transcript: submission.transcript,
+        hasTranscript: !!submission.transcript,
+        transcriptLength: submission.transcript ? submission.transcript.length : 0,
+        assessmentId: submission.assessmentId,
+        createdAt: submission.createdAt
+      });
+    } catch (err) {
+      console.error("[DEBUG] Error fetching submission:", err);
+      const error = err as Error;
+      res.status(500).json({
+        error: error.message || "Failed to fetch submission details"
+      });
+    }
+  });
+
+  // Add this API endpoint near the other debug endpoint
+  app.post("/api/debug/transcript/:id", async (req, res) => {
+    try {
+      const submissionId = req.params.id;
+      const { action, transcript } = req.body;
+      
+      console.log(`[DEBUG] Transcript action: ${action} for submission ${submissionId}`);
+      
+      switch (action) {
+        case 'check':
+          const checkResult = await transcriptTools.checkSubmissionTranscript(submissionId);
+          return res.json(checkResult);
+          
+        case 'update':
+          if (!transcript) {
+            return res.status(400).json({ error: 'Transcript is required for update action' });
+          }
+          const updateResult = await transcriptTools.updateSubmissionTranscript(submissionId, transcript);
+          return res.json(updateResult);
+          
+        case 'save':
+          if (!transcript) {
+            return res.status(400).json({ error: 'Transcript is required for save action' });
+          }
+          const saveResult = transcriptTools.saveTranscriptToFile(transcript, submissionId);
+          return res.json(saveResult);
+          
+        default:
+          return res.status(400).json({ error: 'Invalid action. Supported actions: check, update, save' });
+      }
+    } catch (err) {
+      console.error("[DEBUG] Transcript tool error:", err);
+      const error = err as Error;
+      res.status(500).json({
+        error: error.message || "Failed to perform transcript action"
+      });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

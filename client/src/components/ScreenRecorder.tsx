@@ -72,7 +72,7 @@ export function ScreenRecorder({ onRecordingComplete, maxDuration = 300 }: Scree
         }
       } catch (error) {
         console.error('Error finalizing recording:', error);
-        setError(error.message);
+        setError(error instanceof Error ? error.message : String(error));
       }
     } else {
       setError('No recording data available');
@@ -161,7 +161,7 @@ export function ScreenRecorder({ onRecordingComplete, maxDuration = 300 }: Scree
       }, 1000);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      setError(`Failed to start: ${error.message}`);
+      setError(`Failed to start: ${error instanceof Error ? error.message : String(error)}`);
       stopAllTracks();
       clearTimers();
     }

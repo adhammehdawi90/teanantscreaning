@@ -6,7 +6,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { VideoRecorder } from "@/components/VideoRecorder";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { VideoInterview } from "@shared/schema";
+
+// Define the VideoInterview type locally
+interface VideoInterview {
+  id: number;
+  title: string;
+  description: string;
+  questions: {
+    id: string;
+    content: string;
+  }[];
+  candidateId: number;
+  assessmentId: number;
+  videoUrl?: string;
+}
 
 export default function VideoInterview() {
   const { id } = useParams();
@@ -113,7 +126,15 @@ export default function VideoInterview() {
         </CardHeader>
         <CardContent>
           <VideoRecorder 
+            type="webcam"
             onRecordingComplete={handleRecordingComplete}
+            onError={(error: Error) => {
+              toast({
+                title: "Recording Error",
+                description: error.message,
+                variant: "destructive"
+              });
+            }}
             maxDuration={300} // 5 minutes
           />
         </CardContent>
@@ -124,7 +145,7 @@ export default function VideoInterview() {
           <CardTitle>Interview Questions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {interview?.questions.map((question, i) => (
+          {interview?.questions.map((question: {id: string; content: string}, i: number) => (
             <div key={i} className="p-4 rounded-lg border bg-card">
               <p className="font-medium">Question {i + 1}</p>
               <p className="mt-1 text-muted-foreground">{question.content}</p>

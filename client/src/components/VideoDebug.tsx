@@ -25,7 +25,7 @@ export function VideoDebug({ src }: VideoDebugProps) {
       } catch (error) {
         setDebug({
           exists: false,
-          error: error.message
+          error: error instanceof Error ? error.message : String(error)
         });
       }
     };

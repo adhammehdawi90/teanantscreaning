@@ -119,7 +119,7 @@ export class VideoStorageService {
 
         } catch (error) {
             console.error('❌ Upload error:', error);
-            throw new Error(`Failed to upload ${fieldname} video: ${error.message}`);
+            throw new Error(`Failed to upload ${fieldname} video: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 

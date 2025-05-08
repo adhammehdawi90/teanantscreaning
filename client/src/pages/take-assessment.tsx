@@ -13,10 +13,18 @@ import { apiRequest } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import { VideoRecorder } from "@/components/VideoRecorder";
-import { VideoRecorderRef } from '@/components/VideoRecorder';
 import { VideoStorageService } from "@/services/videoStorage";
 import { navigate } from "wouter/use-browser-location";
 import { queryClient } from "@/lib/queryClient";
+import { useToastExtended } from "@/hooks/use-toast-extended";
+
+// Create a custom interface that extends VideoRecorderRef
+interface ExtendedVideoRecorderRef {
+  stopRecording: () => Promise<void>;
+  cleanup: () => void;
+  getCurrentBlob: () => Blob | null;
+  getCurrentTranscript?: () => string; // Optional method
+}
 
 export default function TakeAssessment() {
   const { id } = useParams();
@@ -26,9 +34,11 @@ export default function TakeAssessment() {
   const [compatibilityIssues, setCompatibilityIssues] = useState<string[]>([]);
   const [webcamBlob, setWebcamBlob] = useState<Blob | null>(null);
   const [screenBlob, setScreenBlob] = useState<Blob | null>(null);
+  const [transcript, setTranscript] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
-  const webcamRecorderRef = useRef<VideoRecorderRef>(null);
-  const screenRecorderRef = useRef<VideoRecorderRef>(null);
+  const webcamRecorderRef = useRef<ExtendedVideoRecorderRef>(null);
+  const screenRecorderRef = useRef<ExtendedVideoRecorderRef>(null);
+  const { warning } = useToastExtended();
 
   const { data: assessment, isLoading } = useQuery<Assessment>({
     queryKey: [`/api/assessments/${id}`],
@@ -43,10 +53,9 @@ export default function TakeAssessment() {
       setCompatibilityIssues(issues);
       
       if (!compatible) {
-        toast({
+        warning({
           title: "Video Recording Issues",
-          description: "Your browser may not fully support video recording. " + issues.join(". "),
-          variant: "warning"
+          description: "Your browser may not fully support video recording. " + issues.join(". ")
         });
       }
     } catch (error) {
@@ -56,19 +65,19 @@ export default function TakeAssessment() {
     }
   }, []);
 
-  const handleRecordingComplete = async (blob: Blob, type: 'webcam' | 'screen') => {
+  const handleRecordingComplete = async (blob: Blob, recordingType: 'webcam' | 'screen'): Promise<void> => {
     try {
-      console.log(`Processing ${type} recording:`, {
+      console.log(`Processing ${recordingType} recording:`, {
         size: blob.size,
         type: blob.type
       });
   
       const isValid = await VideoStorageService.validateVideo(blob);
       if (!isValid) {
-        throw new Error(`Invalid ${type} recording`);
+        throw new Error(`Invalid ${recordingType} recording`);
       }
   
-      if (type === 'webcam') {
+      if (recordingType === 'webcam') {
         setWebcamBlob(blob);
         console.log('Webcam recording saved in state');
       } else {
@@ -78,10 +87,10 @@ export default function TakeAssessment() {
   
       toast({
         title: "Recording Saved",
-        description: `${type} recording completed successfully`
+        description: `${recordingType} recording completed successfully`
       });
     } catch (error: any) {
-      console.error(`${type} recording error:`, error);
+      console.error(`${recordingType} recording error:`, error);
       toast({
         title: "Recording Error",
         description: error.message,
@@ -114,7 +123,7 @@ export default function TakeAssessment() {
           videoUrls.webcamRecordingUrl = await VideoStorageService.uploadVideo(
             webcamBlob,
             'webcamVideo',
-            id
+            id || ''
           );
           console.log('Webcam upload successful:', videoUrls.webcamRecordingUrl);
         }
@@ -128,17 +137,19 @@ export default function TakeAssessment() {
           videoUrls.screenRecordingUrl = await VideoStorageService.uploadVideo(
             screenBlob,
             'screenVideo',
-            id
+            id || ''
           );
           console.log('Screen recording upload successful:', videoUrls.screenRecordingUrl);
         }
   
         const payload = {
           answers,
-          ...videoUrls
+          ...videoUrls,
+          transcript: transcript || "" // Always include transcript, even if empty
         };
   
-        console.log('Submitting assessment with complete payload:', payload);
+        console.log('Submitting assessment with transcript:', transcript);
+        console.log('Complete payload:', payload);
   
         const response = await apiRequest("POST", `/api/assessments/${id}/submit`, payload);
   
@@ -229,8 +240,26 @@ export default function TakeAssessment() {
       // Check if we have recordings that haven't been saved
       if (!webcamBlob && webcamRecorderRef.current?.getCurrentBlob()) {
         const blob = webcamRecorderRef.current.getCurrentBlob();
+        
+        // Try to get the transcript if the method exists
+        let currentTranscript = '';
+        try {
+          // @ts-ignore - Ignore property not existing error
+          if (typeof webcamRecorderRef.current.getCurrentTranscript === 'function') {
+            // @ts-ignore - Ignore property not existing error
+            currentTranscript = webcamRecorderRef.current.getCurrentTranscript();
+          }
+        } catch (e) {
+          console.warn('Could not get transcript:', e);
+        }
+        
         if (blob) {
           await handleRecordingComplete(blob, 'webcam');
+          // Set transcript separately
+          if (currentTranscript) {
+            // @ts-ignore - Ignore string type error
+            setTranscript(currentTranscript);
+          }
         }
       }
       if (!screenBlob && screenRecorderRef.current?.getCurrentBlob()) {
@@ -265,24 +294,15 @@ export default function TakeAssessment() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-8">
-      {!isVideoCompatible && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-yellow-700">
-                Video recording may not work properly in your browser.
-                {compatibilityIssues.map((issue, index) => (
-                  <span key={index} className="block">{issue}</span>
-                ))}
-              </p>
-            </div>
-          </div>
+    <div className="max-w-3xl mx-auto space-y-8 pb-12">
+      {compatibilityIssues.length > 0 && (
+        <div className="bg-yellow-50 p-4 rounded-md border border-yellow-200">
+          <h2 className="font-medium text-yellow-800">Compatibility Warning</h2>
+          <ul className="list-disc pl-5 mt-2 text-sm text-yellow-700">
+            {compatibilityIssues.map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -295,7 +315,28 @@ export default function TakeAssessment() {
             <VideoRecorder
               ref={webcamRecorderRef}
               type="webcam"
-              onRecordingComplete={(blob) => handleRecordingComplete(blob, 'webcam')}
+              // @ts-ignore - Ignore type mismatch for transcript handling
+              onRecordingComplete={(blob, transcriptText) => {
+                // Add explicit logs for debugging
+                console.log(`VIDEO RECORDER COMPLETE CALLBACK FIRED`);
+                console.log(`Blob received:`, { size: blob.size, type: blob.type });
+                console.log(`Transcript received:`, { 
+                  text: transcriptText,
+                  length: transcriptText?.length || 0,
+                  sample: transcriptText?.substring(0, 50) 
+                });
+                
+                // Save the blob
+                handleRecordingComplete(blob, 'webcam');
+                
+                // Save transcript separately with explicit handling
+                if (transcriptText) {
+                  console.log('Setting transcript state with value:', transcriptText);
+                  setTranscript(transcriptText);
+                } else {
+                  console.warn('No transcript received from recorder');
+                }
+              }}
               onError={handleRecordingError}
               maxDuration={3600}
             />
@@ -310,6 +351,7 @@ export default function TakeAssessment() {
             <VideoRecorder
               ref={screenRecorderRef}
               type="screen"
+              // @ts-ignore - Ignore type mismatch
               onRecordingComplete={(blob) => handleRecordingComplete(blob, 'screen')}
               onError={handleRecordingError}
               maxDuration={3600}
@@ -317,6 +359,72 @@ export default function TakeAssessment() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Transcript Card */}
+      {transcript ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex justify-between items-center">
+              <span>Speech Transcript</span>
+              <Badge variant="outline">{transcript.length} characters</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-gray-50 p-3 rounded-md border border-gray-200 max-h-60 overflow-y-auto">
+              <p className="whitespace-pre-wrap">{transcript}</p>
+            </div>
+            
+            <div className="mt-4">
+              <details>
+                <summary className="cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700">
+                  Edit Transcript Manually
+                </summary>
+                <div className="mt-2">
+                  <Textarea
+                    value={transcript}
+                    onChange={(e) => setTranscript(e.target.value)}
+                    className="min-h-[150px]"
+                    placeholder="Edit transcript here"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    You can edit the transcript above if the speech recognition didn't work correctly.
+                  </p>
+                </div>
+              </details>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Speech Transcript</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
+              <p className="text-gray-500">No transcript available. Try recording with your webcam.</p>
+            </div>
+            
+            <div className="mt-4">
+              <details>
+                <summary className="cursor-pointer text-sm font-medium text-gray-500 hover:text-gray-700">
+                  Enter Transcript Manually
+                </summary>
+                <div className="mt-2">
+                  <Textarea
+                    value={transcript}
+                    onChange={(e) => setTranscript(e.target.value)}
+                    className="min-h-[150px]"
+                    placeholder="Enter your transcript here manually"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    If speech recognition isn't working, you can manually type your transcript here.
+                  </p>
+                </div>
+              </details>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div>
         <h1 className="text-3xl font-bold">{assessment.title}</h1>

@@ -95,6 +95,7 @@ const SubmissionSchema = new mongoose.Schema({
   answers: { type: Map, of: String },
   webcamRecordingUrl: String,
   screenRecordingUrl: String,
+  transcript: { type: String, default: "" }, // Add transcript field to store speech recognition text
   evaluations: [{ 
     isCorrect: Boolean,
     score: Number,
