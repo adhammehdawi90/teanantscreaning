@@ -60,8 +60,8 @@ app.use((req, res, next) => {
   }
 
   // Serve the app on localhost:5000
-  const PORT = 5000;
-  const HOST = 'localhost';
+  const PORT = parseInt(process.env.PORT || '5000', 10);
+  const HOST = process.env.HOST || 'localhost';
   
   server.listen(PORT, HOST, () => {
     log(`Server running at http://${HOST}:${PORT}`);

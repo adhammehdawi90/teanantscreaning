@@ -13,6 +13,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -26,5 +31,24 @@ services:
       - postgres
     restart: unless-stopped
 
+  talentscreenpro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: talentscreenpro
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://postgres:Admin123@postgres:5432/foras_assissments
+      - PORT=3000
+    restart: unless-stopped
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  uploads:
